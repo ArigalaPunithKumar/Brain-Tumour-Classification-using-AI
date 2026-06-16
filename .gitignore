@@ -1,0 +1,18 @@
+# AI model files
+*.pth
+*.pt
+*.h5
+*.pkl
+*.joblib
+
+# Python cache
+__pycache__/
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.env
+
+# Archives
+*.zip
+*.rar
