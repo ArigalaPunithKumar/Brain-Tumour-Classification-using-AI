@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: brain-tumour-classification
+    env: python
+    buildCommand: "pip install -r Frontend/life-care/requirements.txt"
+    startCommand: "cd Frontend/life-care && gunicorn app:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
