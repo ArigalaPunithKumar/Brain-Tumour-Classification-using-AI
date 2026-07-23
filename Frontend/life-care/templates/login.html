@@ -48,6 +48,74 @@
       .alert-success { background-color: #d4edda; color: #155724; }
       .alert-danger { background-color: #f8d7da; color: #721c24; }
       .alert-info { background-color: #d1ecf1; color: #0c5460; }
+      
+      /* Modern UI Enhancements */
+      .form-box { 
+          background: #ffffff; 
+          padding: 40px; 
+          border-radius: 12px; 
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); 
+          border: none;
+      }
+      .form-box h2 { font-weight: 800; color: #2c3e50; text-align: center; margin-bottom: 30px; letter-spacing: -0.5px; }
+      .form-control { border-radius: 8px; padding: 12px 15px; height: auto; border: 1px solid #e1e5eb; background-color: #f8f9fa; }
+      .form-control:focus { border-color: #007bff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.15); background-color: #fff; }
+      /* Beautiful Card-based Role Selector */
+      .role-selector {
+          display: flex;
+          justify-content: space-between;
+          gap: 15px;
+          margin-bottom: 25px;
+      }
+      .role-selector label {
+          flex: 1;
+          text-align: center;
+          padding: 20px 10px;
+          margin: 0;
+          cursor: pointer;
+          border-radius: 12px;
+          background: #f8f9fa;
+          border: 2px solid #e1e5eb;
+          color: #6c757d;
+          font-weight: 600;
+          transition: all 0.3s ease;
+          position: relative;
+      }
+      .role-selector label i {
+          display: block;
+          font-size: 32px;
+          margin-bottom: 8px;
+          color: #adb5bd;
+          transition: all 0.3s ease;
+      }
+      .role-selector label:hover {
+          background: #ffffff;
+          border-color: #39b49a;
+          box-shadow: 0 8px 15px rgba(57, 180, 154, 0.1);
+          transform: translateY(-2px);
+      }
+      .role-selector label:hover i {
+          color: #39b49a;
+      }
+      .role-selector input[type="radio"] { display: none; }
+      .role-selector input[type="radio"]:checked + label {
+          background: #f0fbf9;
+          border-color: #39b49a;
+          color: #39b49a;
+          box-shadow: 0 4px 10px rgba(57, 180, 154, 0.2);
+      }
+      .role-selector input[type="radio"]:checked + label i {
+          color: #39b49a;
+      }
+      .btn-primary {
+          background: linear-gradient(to right, #1d86df 0%, #39b49a 100%);
+          border: none;
+      }
+      .btn-primary:hover {
+          background: linear-gradient(to right, #39b49a 0%, #1d86df 100%);
+          transform: translateY(-2px);
+          box-shadow: 0 5px 15px rgba(57, 180, 154, .3);
+      }
   </style>
 </head>
 <body class="clinic_version">
@@ -94,11 +162,18 @@
                        </button>
                    </div>
                    <div id="navbar" class="navbar-collapse collapse">
-                       <ul class="nav navbar-nav">
-                           <li><a class="active" href="{{url_for('index')}}">Home</a></li>
-                           <li><a data-scroll href="{{url_for('about')}}">About us</a></li>
-                           <li><a data-scroll href="{{url_for('login')}}">Login</a></li>
-                       </ul>
+                        <ul class="nav navbar-nav">
+                            <li><a href="{{url_for('index')}}">Home</a></li>
+                            <li><a data-scroll href="{{url_for('about')}}">About us</a></li>
+                            {% if 'user_id' in session %}
+                                {% if session.get('role') == 'admin' %}
+                                    <li><a data-scroll href="{{url_for('admin')}}">Dashboard</a></li>
+                                {% endif %}
+                                <li><a data-scroll href="{{url_for('logout')}}">Logout</a></li>
+                            {% else %}
+                                <li><a class="active" data-scroll href="{{url_for('login')}}">Login</a></li>
+                            {% endif %}
+                        </ul>
                    </div>
                </nav>
            </div>
@@ -121,9 +196,22 @@
            </div>
            <!-- Login Form -->
            <div id="login-form" class="form-container active">
-               <h2>Login</h2>
-               <form action="{{ url_for('login') }}" method="POST">
-                   <div class="form-group">
+                <h2>Welcome Back!</h2>
+                <form action="{{ url_for('login') }}" method="POST">
+                    <div class="role-selector">
+                        <input type="radio" id="login_role_user" name="role" value="user" checked>
+                        <label for="login_role_user">
+                            <i class="fa fa-user"></i>
+                            Patient / User
+                        </label>
+                    
+                        <input type="radio" id="login_role_admin" name="role" value="admin">
+                        <label for="login_role_admin">
+                            <i class="fa fa-shield"></i>
+                            Administrator
+                        </label>
+                    </div>
+                    <div class="form-group">
                        <label for="email_login">Email address</label>
                        <input type="email" class="form-control" id="email_login" name="email" required>
                    </div>
@@ -139,9 +227,22 @@
 
            <!-- Register Form -->
            <div id="register-form" class="form-container">
-               <h2>Register</h2>
-               <form action="{{ url_for('register') }}" method="POST">
-                   <div class="form-group">
+                <h2>Create an Account</h2>
+                <form action="{{ url_for('register') }}" method="POST">
+                    <div class="role-selector">
+                        <input type="radio" id="reg_role_user" name="role" value="user" checked>
+                        <label for="reg_role_user">
+                            <i class="fa fa-user"></i>
+                            Patient / User
+                        </label>
+                    
+                        <input type="radio" id="reg_role_admin" name="role" value="admin">
+                        <label for="reg_role_admin">
+                            <i class="fa fa-shield"></i>
+                            Administrator
+                        </label>
+                    </div>
+                    <div class="form-group">
                         <label for="name">Name</label>
                         <input type="text" class="form-control" id="name" name="name" required>
                    </div>

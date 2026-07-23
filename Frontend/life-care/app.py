@@ -1,8 +1,9 @@
-from flask import Flask, render_template, redirect, url_for, flash, request, session, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, session, jsonify, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_bcrypt import Bcrypt
 import os 
 from datetime import datetime
+from functools import wraps
 import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as transforms
@@ -15,7 +16,11 @@ import torch.nn as nn
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+
+db_url = os.environ.get('DATABASE_URL')
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///users.db'
 
 # Configure upload folder and allowed extensions
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
@@ -131,7 +136,17 @@ class User(db.Model):
     mobile = db.Column(db.String(15), nullable=False)
     gender = db.Column(db.Enum('M', 'F', 'O'), nullable=False)
     age = db.Column(db.Integer, nullable=False)
+    role = db.Column(db.String(10), default='user')
+    status = db.Column(db.String(10), default='active')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+with app.app_context():
+    db.create_all()  # Create the database tables
+    if not User.query.filter_by(email='admin@lifecare.com').first():
+        hashed_pw = bcrypt.generate_password_hash('admin123')
+        admin_user = User(name='Admin', email='admin@lifecare.com', password=hashed_pw, mobile='0000000000', gender='M', age=30, role='admin', status='active')
+        db.session.add(admin_user)
+        db.session.commit()
 
 
 # Routes
@@ -145,20 +160,43 @@ def about():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if 'user_id' in session:
+        return redirect(url_for('admin')) if session.get('role') == 'admin' else redirect(url_for('index'))
+
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
+        role = request.form.get('role', 'user')
 
         user = User.query.filter_by(email=email).first()
         if user and bcrypt.check_password_hash(user.password, password):
+            if user.role != role:
+                flash(f'Account exists, but not as an {role}. Please select the correct role.', 'danger')
+                return render_template('login.html')
+            
+            if user.status == 'blocked':
+                flash('Your account has been blocked by the administrator.', 'danger')
+                return render_template('login.html')
+            elif user.status == 'pending':
+                flash('Your admin account is still pending approval from an existing administrator.', 'warning')
+                return render_template('login.html')
+
             session['user_id'] = user.id  # Store user ID in session
-            return redirect(url_for('home'))
+            session['role'] = user.role
+            
+            if user.role == 'admin':
+                return redirect(url_for('admin'))
+            else:
+                return redirect(url_for('home'))
         else:
             flash('Invalid email or password.', 'danger')
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if 'user_id' in session:
+        return redirect(url_for('admin')) if session.get('role') == 'admin' else redirect(url_for('index'))
+
     if request.method == 'POST':
         name = request.form.get('name')   # Updated from 'username' to 'name'
         email = request.form.get('email')
@@ -167,6 +205,7 @@ def register():
         age = request.form.get('age')
         gender = request.form.get('gender')
         mobile = request.form.get('mobile')
+        role = request.form.get('role', 'user')
 
         # Validate mobile number
         if len(mobile) != 10 or not mobile.isdigit():
@@ -195,6 +234,9 @@ def register():
         # Hash the password
         hashed_password = bcrypt.generate_password_hash(password)
 
+        # Determine status
+        status = 'pending' if role == 'admin' else 'active'
+
         # Create a new user instance
         new_user = User(
             name=name,
@@ -202,14 +244,20 @@ def register():
             password=hashed_password,
             age=age,
             gender=gender,
-            mobile=mobile
+            mobile=mobile,
+            role=role,
+            status=status
         )
 
         # Add and commit the new user to the database
         db.session.add(new_user)
         db.session.commit()
 
-        flash('Registration successful! You can now log in.', 'success')
+        if role == 'admin':
+            flash('Admin registration successful! Please wait for an existing administrator to approve your account.', 'success')
+        else:
+            flash('Registration successful! You can now log in.', 'success')
+            
         return redirect(url_for('login'))
     return render_template('login.html')
 
@@ -277,11 +325,106 @@ def prediction():
 
 @app.route('/logout')
 def logout():
-    session.pop('user_id', None)  # Remove user ID from session
+    session.pop('user_id', None)
+    session.pop('role', None)
     flash('You have been logged out.', 'info')
     return redirect(url_for('login'))
 
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session or session.get('role') != 'admin':
+            flash('You do not have permission to access this page.', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/admin')
+@admin_required
+def admin():
+    users = User.query.order_by(User.created_at.desc()).all()
+    total_users = User.query.filter_by(role='user').count()
+    pending_admins = User.query.filter_by(role='admin', status='pending').count()
+    blocked_users = User.query.filter_by(status='blocked').count()
+    return render_template('admin.html', users=users, total_users=total_users, pending_admins=pending_admins, blocked_users=blocked_users)
+
+@app.route('/admin/block/<int:user_id>')
+@admin_required
+def block_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role != 'admin' or user.id != session.get('user_id'):
+        user.status = 'blocked'
+        db.session.commit()
+        flash(f'User {user.email} has been blocked.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/unblock/<int:user_id>')
+@admin_required
+def unblock_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role != 'admin' or user.id != session.get('user_id'):
+        user.status = 'active'
+        db.session.commit()
+        flash(f'User {user.email} has been unblocked.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/delete/<int:user_id>')
+@admin_required
+def delete_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.role != 'admin' or user.id != session.get('user_id'):
+        db.session.delete(user)
+        db.session.commit()
+        flash(f'User {user.email} has been deleted.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/approve/<int:user_id>')
+@admin_required
+def approve_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if user.status == 'pending':
+        user.status = 'active'
+        db.session.commit()
+        flash(f'Admin {user.email} has been approved.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/edit/<int:user_id>', methods=['POST'])
+@admin_required
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+    # Allow editing normal users, or if it's the admin themselves
+    if user.role != 'admin' or user.id == session.get('user_id'):
+        user.name = request.form.get('name', user.name)
+        user.email = request.form.get('email', user.email)
+        user.mobile = request.form.get('mobile', user.mobile)
+        user.age = request.form.get('age', user.age)
+        user.gender = request.form.get('gender', user.gender)
+        db.session.commit()
+        flash(f'User {user.email} updated successfully.', 'success')
+    return redirect(url_for('admin'))
+
+@app.route('/admin/profile', methods=['POST'])
+@admin_required
+def admin_profile():
+    admin_id = session.get('user_id')
+    admin_user = User.query.get(admin_id)
+    
+    current_password = request.form.get('current_password')
+    new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
+    
+    if not bcrypt.check_password_hash(admin_user.password, current_password):
+        flash('Incorrect current password.', 'danger')
+        return redirect(url_for('admin'))
+        
+    if new_password != confirm_password:
+        flash('New passwords do not match.', 'danger')
+        return redirect(url_for('admin'))
+        
+    admin_user.password = bcrypt.generate_password_hash(new_password)
+    db.session.commit()
+    flash('Password changed successfully.', 'success')
+    return redirect(url_for('admin'))
+
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()  # Create the database tables
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
