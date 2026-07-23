@@ -2,8 +2,8 @@
 
 **An AI-powered full-stack web application that automates brain tumour detection and segmentation from MRI scans using Deep Learning, Flask, and PyTorch.**
 
-🔗 **Live Demo:** {{LIVE_URL}}
-📂 **Source Code:** {{GITHUB_REPO}}
+🔗 **Live Demo:** {{[LIVE_URL](https://brain-tumour-classification-using-ai-production.up.railway.app/)}}
+📂 **Source Code:** {{[GITHUB_REPO](https://github.com/ArigalaPunithKumar/Brain-Tumour-Classification-using-AI)}}
 
 ---
 
