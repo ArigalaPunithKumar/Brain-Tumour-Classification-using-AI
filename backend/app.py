@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import urlopen
 
 import cv2
@@ -43,7 +44,20 @@ if database_url.startswith("mysql://"):
 elif database_url.startswith("mysql+mysqlconnector://"):
     database_url = database_url.replace("mysql+mysqlconnector://", "mysql+pymysql://", 1)
 
+# Aiven's Service URI can include ssl-mode=REQUIRED. PyMySQL expects SSL
+# settings through connect_args, so remove that URI-only option first.
+parts = urlsplit(database_url)
+query = dict(parse_qsl(parts.query, keep_blank_values=True))
+ssl_mode = query.pop("ssl-mode", query.pop("ssl_mode", "")).upper()
+database_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+db_connect_args = {"ssl": {}} if ssl_mode in {"REQUIRED", "VERIFY_CA", "VERIFY_IDENTITY"} else {}
+
 app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280,
+    "connect_args": db_connect_args,
+}
 
 db = SQLAlchemy(app)
 bcrypt = Bcrypt(app)
