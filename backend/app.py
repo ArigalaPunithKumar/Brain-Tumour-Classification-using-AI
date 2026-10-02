@@ -145,10 +145,6 @@ classification_path = MODEL_DIR / "mobilenet.pt"
 relevance_path = MODEL_DIR / "mobilenet_irrelevent.pt"
 segmentation_path = MODEL_DIR / "best_model.pth"
 
-download_if_missing(classification_path, MODEL_URLS["classification"])
-download_if_missing(relevance_path, MODEL_URLS["relevance"])
-download_if_missing(segmentation_path, MODEL_URLS["segmentation"])
-
 
 loaded_model_name = None
 loaded_model = None
@@ -173,12 +169,15 @@ def load_model(name):
     unload_model()
 
     if name == "relevance":
+        download_if_missing(relevance_path, MODEL_URLS["relevance"])
         model = MobileNetModel(2)
         model.load_state_dict(torch.load(relevance_path, map_location=device))
     elif name == "classification":
+        download_if_missing(classification_path, MODEL_URLS["classification"])
         model = MobileNetModel(2)
         model.load_state_dict(torch.load(classification_path, map_location=device))
     elif name == "segmentation":
+        download_if_missing(segmentation_path, MODEL_URLS["segmentation"])
         model = smp.Unet(
             encoder_name="resnet34",
             encoder_weights=None,
