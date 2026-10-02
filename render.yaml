@@ -1,9 +1,21 @@
 services:
   - type: web
-    name: brain-tumour-classification
-    env: python
-    buildCommand: "pip install -r Frontend/life-care/requirements.txt"
-    startCommand: "cd Frontend/life-care && gunicorn app:app"
+    name: brain-tumour-ai-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --workers 1 --threads 1 --timeout 180 app:app
+    plan: free
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: 3.10.14
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: COOKIE_SECURE
+        value: "true"
