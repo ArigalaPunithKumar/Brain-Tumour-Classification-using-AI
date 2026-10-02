@@ -136,29 +136,49 @@ download_if_missing(relevance_path, MODEL_URLS["relevance"])
 download_if_missing(segmentation_path, MODEL_URLS["segmentation"])
 
 
-classification_model = MobileNetModel(2)
-classification_model.load_state_dict(
-    torch.load(classification_path, map_location=device)
-)
-classification_model.to(device).eval()
+loaded_model_name = None
+loaded_model = None
 
-relevancy_model = MobileNetModel(2)
-relevancy_model.load_state_dict(
-    torch.load(relevance_path, map_location=device)
-)
-relevancy_model.to(device).eval()
 
-segmentation_model = smp.Unet(
-    encoder_name="resnet34",
-    encoder_weights=None,
-    in_channels=1,
-    classes=1,
-    activation=None,
-)
-segmentation_model.load_state_dict(
-    torch.load(segmentation_path, map_location=device)
-)
-segmentation_model.to(device).eval()
+def unload_model():
+    global loaded_model_name, loaded_model
+    loaded_model = None
+    loaded_model_name = None
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def load_model(name):
+    global loaded_model_name, loaded_model
+
+    if loaded_model_name == name and loaded_model is not None:
+        return loaded_model
+
+    unload_model()
+
+    if name == "relevance":
+        model = MobileNetModel(2)
+        model.load_state_dict(torch.load(relevance_path, map_location=device))
+    elif name == "classification":
+        model = MobileNetModel(2)
+        model.load_state_dict(torch.load(classification_path, map_location=device))
+    elif name == "segmentation":
+        model = smp.Unet(
+            encoder_name="resnet34",
+            encoder_weights=None,
+            in_channels=1,
+            classes=1,
+            activation=None,
+        )
+        model.load_state_dict(torch.load(segmentation_path, map_location=device))
+    else:
+        raise ValueError(f"Unknown model: {name}")
+
+    loaded_model = model.to(device).eval()
+    loaded_model_name = name
+    return loaded_model
 
 
 def user_payload(user):
@@ -196,32 +216,41 @@ def require_admin():
 
 
 def predict_relevance(image):
+    model = load_model("relevance")
     tensor = IMAGE_TRANSFORM(image).unsqueeze(0).to(device)
     with torch.inference_mode():
-        output = relevancy_model(tensor)
+        output = model(tensor)
         predicted = torch.argmax(output, dim=1)
-    return predicted.item()
+    result = predicted.item()
+    unload_model()
+    return result
 
 
 def predict_tumor(image):
+    model = load_model("classification")
     tensor = IMAGE_TRANSFORM(image).unsqueeze(0).to(device)
     with torch.inference_mode():
-        output = classification_model(tensor)
+        output = model(tensor)
         predicted = torch.argmax(output, dim=1)
-    return predicted.item()
+    result = predicted.item()
+    unload_model()
+    return result
 
 
 def predict_segmentation(image):
+    model = load_model("segmentation")
     gray = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2GRAY)
     gray = cv2.resize(gray, (224, 224)).astype(np.float32) / 255.0
     tensor = torch.from_numpy(gray).unsqueeze(0).unsqueeze(0).to(device)
 
     with torch.inference_mode():
-        logits = segmentation_model(tensor)
+        logits = model(tensor)
         probability = torch.sigmoid(logits)
         mask = (probability > 0.5).float()
 
-    return mask.squeeze().cpu().numpy()
+    result = mask.squeeze().cpu().numpy()
+    unload_model()
+    return result
 
 
 def mask_to_data_url(mask):
