@@ -38,7 +38,7 @@ Environment variables:
 - `ADMIN_EMAIL` = desired admin email
 - `COOKIE_SECURE` = `true`
 
-The three model files are downloaded lazily from their existing GitHub locations when the backend first needs them. The backend loads only one model at a time to reduce memory pressure.
+The three required model files are stored in `backend/models/` and are loaded locally by the Render backend. The backend loads only one model at a time to reduce memory pressure.
 
 After deployment, verify:
 
