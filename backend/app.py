@@ -6,7 +6,6 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-from urllib.request import urlopen
 
 import cv2
 import numpy as np
@@ -111,36 +110,6 @@ class MobileNetModel(nn.Module):
         return self.mobilenet(x)
 
 
-def download_if_missing(path: Path, url: str):
-    if path.exists() and path.stat().st_size > 0:
-        return
-    if not url:
-        raise RuntimeError(f"Missing model {path.name} and no download URL was configured.")
-    print(f"Downloading {path.name}...")
-    with urlopen(url, timeout=300) as response, open(path, "wb") as output:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            output.write(chunk)
-    print(f"Downloaded {path.name} ({path.stat().st_size / 1024 / 1024:.1f} MB)")
-
-
-MODEL_URLS = {
-    "classification": os.getenv(
-        "CLASSIFICATION_MODEL_URL",
-        "https://raw.githubusercontent.com/ArigalaPunithKumar/Brain-Tumour-Classification-using-AI/main/Frontend/life-care/mobilenet.pt",
-    ),
-    "relevance": os.getenv(
-        "RELEVANCE_MODEL_URL",
-        "https://raw.githubusercontent.com/ArigalaPunithKumar/Brain-Tumour-Classification-using-AI/main/Frontend/life-care/mobilenet_irrelevent.pt",
-    ),
-    "segmentation": os.getenv(
-        "SEGMENTATION_MODEL_URL",
-        "https://raw.githubusercontent.com/ArigalaPunithKumar/Brain-Tumour-Classification-using-AI/main/Frontend/life-care/best_model.pth",
-    ),
-}
-
 classification_path = MODEL_DIR / "mobilenet.pt"
 relevance_path = MODEL_DIR / "mobilenet_irrelevent.pt"
 segmentation_path = MODEL_DIR / "best_model.pth"
@@ -169,15 +138,12 @@ def load_model(name):
     unload_model()
 
     if name == "relevance":
-        download_if_missing(relevance_path, MODEL_URLS["relevance"])
         model = MobileNetModel(2)
         model.load_state_dict(torch.load(relevance_path, map_location=device))
     elif name == "classification":
-        download_if_missing(classification_path, MODEL_URLS["classification"])
         model = MobileNetModel(2)
         model.load_state_dict(torch.load(classification_path, map_location=device))
     elif name == "segmentation":
-        download_if_missing(segmentation_path, MODEL_URLS["segmentation"])
         model = smp.Unet(
             encoder_name="resnet34",
             encoder_weights=None,
