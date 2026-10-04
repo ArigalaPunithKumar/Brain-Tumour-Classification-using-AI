@@ -4,3 +4,4 @@ torch==2.1.2+cpu
 torchvision==0.16.2+cpu
 segmentation-models-pytorch==0.3.3
 onnx==1.15.0
+six==1.16.0
