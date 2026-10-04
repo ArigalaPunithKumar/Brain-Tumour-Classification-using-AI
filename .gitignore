@@ -1,9 +1,12 @@
 # AI model files
-*.pth
-*.pt
 *.h5
 *.pkl
 *.joblib
+
+# Required production models
+!backend/models/
+!backend/models/*.pth
+!backend/models/*.pt
 
 # Python cache
 __pycache__/
