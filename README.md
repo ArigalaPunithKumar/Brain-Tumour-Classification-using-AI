@@ -45,19 +45,19 @@ A U-Net model with a ResNet34 encoder generates a mask representing the predicte
 - Brain tumour classification
 - Tumour segmentation
 - Segmentation-mask visualization
-- SQLite database integration
+- Aiven MySQL database integration
 - Responsive web interface
 - Docker/Gunicorn deployment configuration
 
 ## Technology Stack
 
-**Application:** Python, Flask, Flask-SQLAlchemy, Flask-Bcrypt, Jinja2, SQLite
+**Application:** React, Vite, Python, Flask, Flask-SQLAlchemy, Flask-Bcrypt, Aiven MySQL
 
 **Deep Learning:** PyTorch, TorchVision, segmentation-models-pytorch, MobileNet, U-Net, ResNet34
 
 **Image Processing:** OpenCV, Pillow, NumPy, Matplotlib
 
-**Deployment:** Docker, Gunicorn
+**Deployment:** Vercel (frontend), Render (backend), Gunicorn, Aiven MySQL
 
 ## My Contributions
 
@@ -92,25 +92,14 @@ Segmentation
 Result Visualization
 ```
 
-## How to Run
+## Deployment
 
-### Prerequisites
-- Python 3.x
-- pip
-- Git
+- `frontend/` is deployed to Vercel.
+- `backend/` is deployed to Render.
+- Aiven MySQL stores user accounts and application data.
+- The three production model files are committed under `backend/models/`.
 
-### Clone
-```bash
-git clone https://github.com/ArigalaPunithKumar/Brain-Tumour-Classification-using-AI.git
-cd Brain-Tumour-Classification-using-AI
-```
-
-### Install
-```bash
-pip install -r requirements.txt
-```
-
-Configure the required environment variables/settings and run the Flask application using the project's configured entry point.
+See `DEPLOYMENT.md` for the complete deployment configuration and environment variables.
 
 ## Live Demo
 
