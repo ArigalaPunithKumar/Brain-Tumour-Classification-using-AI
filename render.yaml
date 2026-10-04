@@ -3,7 +3,7 @@ services:
     name: brain-tumour-ai-api
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-build.txt && python export_onnx.py && rm -f models/*.pt models/*.pth && pip uninstall -y torch torchvision segmentation-models-pytorch timm efficientnet-pytorch pretrainedmodels onnx
     startCommand: gunicorn --workers 1 --threads 1 --timeout 180 app:app
     plan: free
     envVars:
