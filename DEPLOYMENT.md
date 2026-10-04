@@ -26,7 +26,7 @@ Recommended settings:
 - Root Directory: `backend`
 - Runtime: Python
 - Build Command: `pip install -r requirements.txt`
-- Start Command: `gunicorn --workers 1 --threads 2 --timeout 180 app:app`
+- Start Command: `gunicorn --workers 1 --threads 1 --timeout 180 app:app`
 - Plan: Free
 
 Environment variables:
