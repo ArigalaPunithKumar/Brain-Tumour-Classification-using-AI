@@ -1,4 +1,5 @@
 import base64
+import gc
 import os
 import secrets
 import uuid
@@ -7,13 +8,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-import cv2
 import numpy as np
-import segmentation_models_pytorch as smp
-import torch
-import torch.nn as nn
-import torchvision.models as tv_models
-import torchvision.transforms as transforms
+import onnxruntime as ort
 from PIL import Image
 from flask import Flask, jsonify, request, session
 from flask_bcrypt import Bcrypt
@@ -43,8 +39,6 @@ if database_url.startswith("mysql://"):
 elif database_url.startswith("mysql+mysqlconnector://"):
     database_url = database_url.replace("mysql+mysqlconnector://", "mysql+pymysql://", 1)
 
-# Aiven's Service URI can include ssl-mode=REQUIRED. PyMySQL expects SSL
-# settings through connect_args, so remove that URI-only option first.
 parts = urlsplit(database_url)
 query = dict(parse_qsl(parts.query, keep_blank_values=True))
 ssl_mode = query.pop("ssl-mode", query.pop("ssl_mode", "")).upper()
@@ -72,16 +66,15 @@ CORS(
     origins=allowed_origins,
 )
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-IMAGE_TRANSFORM = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
-    ),
-])
+classification_path = MODEL_DIR / "mobilenet.onnx"
+relevance_path = MODEL_DIR / "mobilenet_irrelevent.onnx"
+segmentation_path = MODEL_DIR / "best_model.onnx"
+
+loaded_model_name = None
+loaded_model = None
 
 
 class User(db.Model):
@@ -99,34 +92,11 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
-class MobileNetModel(nn.Module):
-    def __init__(self, num_classes):
-        super().__init__()
-        self.mobilenet = tv_models.mobilenet_v2(weights=None)
-        in_features = self.mobilenet.classifier[1].in_features
-        self.mobilenet.classifier[1] = nn.Linear(in_features, num_classes)
-
-    def forward(self, x):
-        return self.mobilenet(x)
-
-
-classification_path = MODEL_DIR / "mobilenet.pt"
-relevance_path = MODEL_DIR / "mobilenet_irrelevent.pt"
-segmentation_path = MODEL_DIR / "best_model.pth"
-
-
-loaded_model_name = None
-loaded_model = None
-
-
 def unload_model():
     global loaded_model_name, loaded_model
     loaded_model = None
     loaded_model_name = None
-    import gc
     gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
 
 
 def load_model(name):
@@ -137,27 +107,69 @@ def load_model(name):
 
     unload_model()
 
-    if name == "relevance":
-        model = MobileNetModel(2)
-        model.load_state_dict(torch.load(relevance_path, map_location=device))
-    elif name == "classification":
-        model = MobileNetModel(2)
-        model.load_state_dict(torch.load(classification_path, map_location=device))
-    elif name == "segmentation":
-        model = smp.Unet(
-            encoder_name="resnet34",
-            encoder_weights=None,
-            in_channels=1,
-            classes=1,
-            activation=None,
-        )
-        model.load_state_dict(torch.load(segmentation_path, map_location=device))
-    else:
+    paths = {
+        "relevance": relevance_path,
+        "classification": classification_path,
+        "segmentation": segmentation_path,
+    }
+    model_path = paths.get(name)
+    if model_path is None:
         raise ValueError(f"Unknown model: {name}")
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
-    loaded_model = model.to(device).eval()
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = 1
+    options.inter_op_num_threads = 1
+    options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+    loaded_model = ort.InferenceSession(
+        str(model_path),
+        sess_options=options,
+        providers=["CPUExecutionProvider"],
+    )
     loaded_model_name = name
     return loaded_model
+
+
+def release_prediction_model():
+    global loaded_model_name, loaded_model
+    loaded_model = None
+    loaded_model_name = None
+    gc.collect()
+
+
+def classification_input(image):
+    resized = image.convert("RGB").resize((224, 224), Image.Resampling.BILINEAR)
+    array = np.asarray(resized, dtype=np.float32) / 255.0
+    array = (array - MEAN) / STD
+    return np.transpose(array, (2, 0, 1))[None, ...].astype(np.float32)
+
+
+def segmentation_input(image):
+    gray = image.convert("L").resize((224, 224), Image.Resampling.BILINEAR)
+    array = np.asarray(gray, dtype=np.float32) / 255.0
+    return array[None, None, ...].astype(np.float32)
+
+
+def predict_classification(image, model_name):
+    model = load_model(model_name)
+    input_name = model.get_inputs()[0].name
+    output = model.run(None, {input_name: classification_input(image)})[0]
+    result = int(np.argmax(output, axis=1)[0])
+    release_prediction_model()
+    return result
+
+
+def predict_segmentation(image):
+    model = load_model("segmentation")
+    input_name = model.get_inputs()[0].name
+    logits = model.run(None, {input_name: segmentation_input(image)})[0]
+    probability = 1.0 / (1.0 + np.exp(-logits))
+    mask = (probability > 0.5).astype(np.float32)
+    result = mask.squeeze()
+    release_prediction_model()
+    return result
 
 
 def user_payload(user):
@@ -194,44 +206,6 @@ def require_admin():
     return user, None
 
 
-def predict_relevance(image):
-    model = load_model("relevance")
-    tensor = IMAGE_TRANSFORM(image).unsqueeze(0).to(device)
-    with torch.inference_mode():
-        output = model(tensor)
-        predicted = torch.argmax(output, dim=1)
-    result = predicted.item()
-    unload_model()
-    return result
-
-
-def predict_tumor(image):
-    model = load_model("classification")
-    tensor = IMAGE_TRANSFORM(image).unsqueeze(0).to(device)
-    with torch.inference_mode():
-        output = model(tensor)
-        predicted = torch.argmax(output, dim=1)
-    result = predicted.item()
-    unload_model()
-    return result
-
-
-def predict_segmentation(image):
-    model = load_model("segmentation")
-    gray = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2GRAY)
-    gray = cv2.resize(gray, (224, 224)).astype(np.float32) / 255.0
-    tensor = torch.from_numpy(gray).unsqueeze(0).unsqueeze(0).to(device)
-
-    with torch.inference_mode():
-        logits = model(tensor)
-        probability = torch.sigmoid(logits)
-        mask = (probability > 0.5).float()
-
-    result = mask.squeeze().cpu().numpy()
-    unload_model()
-    return result
-
-
 def mask_to_data_url(mask):
     image = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
     buffer = BytesIO()
@@ -247,7 +221,11 @@ def health():
         database = "connected"
     except Exception:
         database = "error"
-    return jsonify({"status": "ok", "database": database, "device": str(device)})
+    return jsonify({
+        "status": "ok",
+        "database": database,
+        "device": "onnxruntime-cpu",
+    })
 
 
 @app.get("/api/auth/me")
@@ -370,14 +348,14 @@ def predict():
     try:
         image = Image.open(temp_path).convert("RGB")
 
-        relevance = predict_relevance(image)
+        relevance = predict_classification(image, "relevance")
         if relevance == 1:
             return jsonify({
                 "status": "irrelevant",
                 "message": "The uploaded image is irrelevant. Please upload a brain MRI image.",
             })
 
-        tumor = predict_tumor(image)
+        tumor = predict_classification(image, "classification")
         if tumor != 1:
             return jsonify({
                 "status": "no_tumor",
@@ -395,6 +373,7 @@ def predict():
         return jsonify({"message": f"Prediction failed: {exc}"}), 500
     finally:
         temp_path.unlink(missing_ok=True)
+        release_prediction_model()
 
 
 @app.get("/api/admin/users")
