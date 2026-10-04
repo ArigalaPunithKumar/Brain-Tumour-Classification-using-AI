@@ -101,9 +101,9 @@ Result Visualization
 
 See `DEPLOYMENT.md` for the complete deployment configuration and environment variables.
 
-## Live Demo
+## Deployment
 
-[Open Live Demo](https://brain-tumour-classification-using-ai-production.up.railway.app/)
+The production setup uses Vercel for the React frontend, Render for the Flask/PyTorch backend, and Aiven MySQL for persistent data. Configure the Vercel and Render URLs using the steps in `DEPLOYMENT.md`.
 
 ## What This Project Demonstrates
 
