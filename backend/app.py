@@ -472,7 +472,16 @@ def seed_admin():
         return
 
     admin = User.query.filter_by(email=email).first()
+    force_reset = os.getenv("ADMIN_FORCE_RESET", "false").lower() == "true"
+
     if admin:
+        if admin.role != "admin" or admin.status != "active":
+            admin.role = "admin"
+            admin.status = "active"
+        if force_reset:
+            admin.password = bcrypt.generate_password_hash(password).decode("utf-8")
+            db.session.commit()
+            print(f"Reset admin password for: {email}")
         return
 
     admin = User(
