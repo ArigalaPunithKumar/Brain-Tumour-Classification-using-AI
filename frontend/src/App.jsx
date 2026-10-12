@@ -137,7 +137,25 @@ function AuthPage({ mode, onLogin }) {
   const submit = async (event) => {
     event.preventDefault(); setError(""); setBusy(true);
     try {
-      const data = isLogin ? await api.login(form) : await api.register(form);
+      const submitted = Object.fromEntries(new FormData(event.currentTarget).entries());
+
+      const payload = isLogin
+        ? {
+            email: String(submitted.email || "").trim().toLowerCase(),
+            password: String(submitted.password || ""),
+            role: String(submitted.role || "user").toLowerCase(),
+          }
+        : {
+            name: String(submitted.name || "").trim(),
+            email: String(submitted.email || "").trim().toLowerCase(),
+            password: String(submitted.password || ""),
+            confirm_password: String(submitted.confirm_password || ""),
+            age: String(submitted.age || "").trim(),
+            gender: String(submitted.gender || "O").toUpperCase(),
+            mobile: String(submitted.mobile || "").trim(),
+          };
+
+      const data = isLogin ? await api.login(payload) : await api.register(payload);
       if (isLogin) { onLogin(data.user); navigate(data.user.role === "admin" ? "/admin" : "/dashboard"); }
       else navigate("/login", { state: { registered: true } });
     } catch (err) { setError(err.message); } finally { setBusy(false); }
@@ -147,10 +165,10 @@ function AuthPage({ mode, onLogin }) {
     <div className="auth-panel"><span className="eyebrow">{isLogin ? "WELCOME BACK" : "CREATE ACCOUNT"}</span><h1>{isLogin ? "Continue to your workspace." : "Start your analysis journey."}</h1><p>{isLogin ? "Sign in to upload an MRI and run the AI pipeline." : "Create an account to access the MRI analysis workspace."}</p>
       {error && <div className="alert error">{error}</div>}
       <form onSubmit={submit} className="form-grid">
-        {!isLogin && <><Field label="Full name"><input value={form.name} onChange={(e) => update("name", e.target.value)} required /></Field><Field label="Mobile"><input value={form.mobile} onChange={(e) => update("mobile", e.target.value)} inputMode="numeric" maxLength="10" required /></Field><Field label="Age"><input type="number" value={form.age} onChange={(e) => update("age", e.target.value)} min="1" max="120" required /></Field><Field label="Gender"><select value={form.gender} onChange={(e) => update("gender", e.target.value)}><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></Field></>}
-        <Field label="Email"><input type="email" value={form.email} onChange={(e) => update("email", e.target.value)} required /></Field><Field label="Password"><input type="password" value={form.password} onChange={(e) => update("password", e.target.value)} required /></Field>
-        {isLogin && <Field label="Account type"><select value={form.role} onChange={(e) => update("role", e.target.value)}><option value="user">User</option><option value="admin">Admin</option></select></Field>}
-        {!isLogin && <Field label="Confirm password"><input type="password" value={form.confirm_password} onChange={(e) => update("confirm_password", e.target.value)} required /></Field>}
+        {!isLogin && <><Field label="Full name"><input name="name" autoComplete="name" value={form.name} onChange={(e) => update("name", e.target.value)} required /></Field><Field label="Mobile"><input name="mobile" autoComplete="tel" value={form.mobile} onChange={(e) => update("mobile", e.target.value)} inputMode="numeric" maxLength="10" required /></Field><Field label="Age"><input name="age" autoComplete="off" type="number" value={form.age} onChange={(e) => update("age", e.target.value)} min="1" max="120" required /></Field><Field label="Gender"><select name="gender" autoComplete="sex" value={form.gender} onChange={(e) => update("gender", e.target.value)}><option value="M">Male</option><option value="F">Female</option><option value="O">Other</option></select></Field></>}
+        <Field label="Email"><input name="email" autoComplete={isLogin ? "email" : "username"} type="email" value={form.email} onChange={(e) => update("email", e.target.value)} required /></Field><PasswordField label="Password" name="password" value={form.password} onChange={(e) => update("password", e.target.value)} autoComplete={isLogin ? "current-password" : "new-password"} />
+        {isLogin && <Field label="Account type"><select name="role" value={form.role} onChange={(e) => update("role", e.target.value)}><option value="user">User</option><option value="admin">Admin</option></select></Field>}
+        {!isLogin && <PasswordField label="Confirm password" name="confirm_password" value={form.confirm_password} onChange={(e) => update("confirm_password", e.target.value)} autoComplete="new-password" />}
         <button className="button primary submit" disabled={busy}>{busy ? "Please wait…" : isLogin ? "Sign in →" : "Create account →"}</button>
       </form>
       <p className="auth-switch">{isLogin ? "Don't have an account?" : "Already have an account?"} <Link to={isLogin ? "/register" : "/login"}>{isLogin ? "Create one" : "Sign in"}</Link></p>
@@ -158,6 +176,36 @@ function AuthPage({ mode, onLogin }) {
   </section>;
 }
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
+
+function PasswordField({ label, name, value, onChange, autoComplete }) {
+  const [visible, setVisible] = useState(false);
+  return <label className="field">
+    <span>{label}</span>
+    <span className="password-field">
+      <input
+        name={name}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        required
+      />
+      <button
+        type="button"
+        className="password-toggle"
+        onClick={() => setVisible((current) => !current)}
+        aria-label={visible ? "Hide password" : "Show password"}
+        title={visible ? "Hide password" : "Show password"}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {visible
+            ? <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /><path d="m4 4 16 16" /></>
+            : <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>}
+        </svg>
+      </button>
+    </span>
+  </label>;
+}
 function ProtectedRoute({ user, adminOnly, children }) { const location = useLocation(); if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />; if (adminOnly && user.role !== "admin") return <Navigate to="/dashboard" replace />; return children; }
 
 function Dashboard({ user }) {
